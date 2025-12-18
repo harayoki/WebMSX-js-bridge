@@ -46,6 +46,8 @@ This design avoids hard-coding web access into the emulator or MSX software, pre
   - track ID
   - volume changes
 
+For cartridge-level audio handling details, see the [Sound Cartridge Specification](sound-cartridge-spec.md).
+
 In a future hardware scenario, a ROM cartridge could:
 - Store MP3 or compressed audio data externally
 - Decode audio via an onboard chip
