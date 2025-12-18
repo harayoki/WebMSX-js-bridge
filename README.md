@@ -1,3 +1,9 @@
+A WebMSX implementation that allows JavaScript code and code running inside the MSX (machine code or BASIC) to communicate through I/O ports. (In development)
+
+Additional specifications are summarized on a separate page [io-port-js-bridge.md](docs/io-port-js-bridge.md) .
+
+This repository is a clone of WebMSX (https://github.com/ppeccin/webmsx). It has been recreated as a new repository because Codex does not recognize it while it's a fork.
+
 # WebMSX
 
 **WebMSX**, or simply **WMSX**, is a new cross platform MSX emulator designed for the Web.
