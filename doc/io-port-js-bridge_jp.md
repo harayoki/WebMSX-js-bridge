@@ -103,3 +103,63 @@ MSX側のロジックをシンプルかつデバイス非依存のままに、�
 ## まとめ
 
 I/OポートJSブリッジは、JavaScriptを統合ランタイムではなく外部周辺機器として扱います。MSX時代のI/Oセマンティクスを尊重することで、移植性とシンプルさ、そして将来の実機ハードウェア実装の可能性を保ちつつ、現代的な機能を提供します。
+
+---
+
+## エミュレータ外JavaScriptでOUT/INを扱う実装指針
+
+### いつフックするか
+- `WMSX.start()` 呼び出し後は `WMSX.room.machine.bus` にアクセスできる。
+- ポートを占有する前に、`bus.devicesInputPorts` / `bus.devicesOutputPorts` を確認し、既存デバイスが無いことを必ず確認する。
+
+### OUT（MSX → JS）処理
+- `bus.connectOutputDevice(port, handler)` でハンドラを登録する。ハンドラは `(value, port)` を受ける。
+- ハンドラ内では**即時に重い処理をしない**。キューに積んで `setTimeout` / `queueMicrotask` などで後続処理を行い、エミュレータのフレームをブロックしない。
+- 例: OUTで渡されたバイト列をまとめてホストJS側へ転送する。
+
+```js
+function attachBridge() {
+  const bus = WMSX.room.machine.bus;
+  const PORT_DATA = 0x48;   // 使用前に空きポートであることを要確認
+  const outbox = [];
+
+  function drainOutbox() {
+    if (!outbox.length) return;
+    const packet = new Uint8Array(outbox.splice(0, outbox.length));
+    // ここでfetchやWebSocket送信などを実施
+  }
+
+  bus.connectOutputDevice(PORT_DATA, (value) => {
+    outbox.push(value & 0xff);
+    if (outbox.length === 1) queueMicrotask(drainOutbox);
+  });
+}
+```
+
+### IN（JS → MSX）処理
+- `bus.connectInputDevice(port, handler)` でハンドラを登録する。ハンドラは `port` を受け、**即時にバイト値を返す必要**がある。
+- 非同期データを渡す場合はあらかじめキューを用意し、無い場合は `0xff` 等の「未準備」を表す値を返す。
+- OUTとINを分けた「データポート」と「ステータスポート」を設けるとプロトコル設計が単純になる。
+
+```js
+function attachInbound(bus) {
+  const PORT_STATUS = 0x49; // 使用前に空きポートであることを確認
+  const PORT_DATA = 0x4a;
+  const inbox = [];
+
+  // 外部イベントでinboxにpushする
+  function feedBytes(bytes) { inbox.push(...bytes); }
+
+  bus.connectInputDevice(PORT_STATUS, () => (inbox.length ? 1 : 0)); // 1=読めるデータあり
+  bus.connectInputDevice(PORT_DATA, () => (inbox.length ? inbox.shift() : 0xff));
+}
+```
+
+### ポート設計のコツ
+- 既存デバイスが使用するポートを避ける（VDP: 0x98–0x9b、PSG: 0xa0–0xa1、PPI: 0xa8–0xab など）。
+- 2〜4ポートを連番で確保し、「データ」「ステータス」「コマンド/長さ」といった役割を分離する。
+- 大量転送が必要な場合は「長さ付きパケット」「先頭バイトをコマンド」といったシンプルな自前プロトコルを組む。
+
+### クリーンアップ
+- ブリッジを外すときは `bus.disconnectInputDevice` / `bus.disconnectOutputDevice` を呼び出してポートを解放する。
+- NetPlayなどでRoomが再構成される場合は、再度 `attachBridge` を呼び出して新しい `bus` に繋ぎ直す。
