@@ -106,6 +106,70 @@ I/OポートJSブリッジは、JavaScriptを統合ランタイムではなく�
 
 ---
 
+## Short Protocol v1-2P（2ポート短縮版）
+
+**目的:** 旧4ポート版の思想（STATUSビット、TYPE/LEN/PAYLOADパケット、RESET、BUSY/ERROR）を保ったまま、固定ポート`0x48/0x49`の2ポートに圧縮する。
+
+### ポート割り当て
+- **PORT0 = `0x48` (CTRL/STATUS、双方向)**
+  - `OUT`: `CMD`（1バイト）
+  - `IN` : `STATUS`（ビットフィールド）
+- **PORT1 = `0x49` (DATA、双方向)**
+  - `OUT`: `ARG` / `DATA`（1バイトずつ）
+  - `IN` : RXデータ（1バイトずつ、JS側リングバッファから）
+
+### STATUSビット（`IN PORT0`）
+- `bit0 RX_READY` : JS→MSXのRXキューに読めるデータがある（次のバイトはPORT1）
+- `bit1 TX_READY` : MSX→JS送信を受け付け可能（現行は常に`1`で可）
+- `bit2 EV_READY` : 入力イベント準備（`RX_READY`と同義にしてもよい）
+- `bit3 BUSY`     : JSが非同期処理中（例: `fetch`）
+- `bit4 ERROR`    : 直近処理でエラー（詳細は `RSP_ERROR` パケット）
+- `bit7 ALIVE`    : 常に`1`（生存確認）
+
+### パケット形式（JS→MSX、必須）
+- `1バイト TYPE`
+- `1バイト LEN`（`0..255`）
+- `Nバイト PAYLOAD`
+
+MSX側は `STATUS` をポーリングして `RX_READY` を待ち、`PORT1` からパケットを読み出す運用が基本。
+
+### CMD（`OUT PORT0`）
+
+`CMD` を `PORT0` に出した後、必要な引数バイトを `PORT1` に送る。  
+JS側は `lastCmd` と `expectedLen` を保持し、所定バイト数を受信したら dispatch する。
+
+| CMD  | 追加データ (PORT1) | 備考 |
+| ---- | ------------------ | ---- |
+| `0x20 MP3_PLAY` | `1バイト trackId` | |
+| `0x21 MP3_STOP` | `0` バイト | |
+| `0x22 MP3_VOL`  | `1バイト volume` | |
+| `0x30 REQ_TEXT` | `1バイト reqId` | JSは非同期生成し、完了時に `RSP_TEXT` パケットをRXキューへpush。生成中は `STATUS.BUSY` を立ててもよい |
+| `0x3F RESET`    | `0` バイト | JS側状態（キュー、`lastCmd`、`ERROR/BUSY`、受信途中）を全クリア |
+
+#### 拡張方針（将来の可変長用メモ）
+- *方針B: CMD直後にLEN(1)を`PORT1`へ送り、その後`LEN`バイト送る。*
+- *方針C: MSX→JSにも `TYPE/LEN/PAYLOAD` を適用して対称化。*
+
+### 失敗/復旧指針
+- 想定外の `PORT1 OUT`（`expectedLen == 0` の状態でデータが来る等）は `STATUS.ERROR` を立てる。
+- `RESET` (`CMD = 0x3F`) でエラー・ビジー・受信途中・キューをすべてクリア。
+- 任意: `PORT1` が一定時間沈黙したら受信途中を破棄する簡易タイムアウト。
+
+### MSX側ポーリングループ（疑似コード）
+
+```asm
+WAIT:   IN   A,(0x48)           ; STATUS
+        BIT  0,A                ; RX_READY?
+        JR   Z,WAIT
+        IN   A,(0x49)           ; TYPE
+        LD   B,A
+        IN   A,(0x49)           ; LEN
+        LD   C,A
+READ:   ; Cバイトを0x49から読む
+```
+
+---
+
 ## エミュレータ外JavaScriptでOUT/INを扱う実装指針
 
 ### いつフックするか
@@ -115,51 +179,163 @@ I/OポートJSブリッジは、JavaScriptを統合ランタイムではなく�
 ### OUT（MSX → JS）処理
 - `bus.connectOutputDevice(port, handler)` でハンドラを登録する。ハンドラは `(value, port)` を受ける。
 - ハンドラ内では**即時に重い処理をしない**。キューに積んで `setTimeout` / `queueMicrotask` などで後続処理を行い、エミュレータのフレームをブロックしない。
-- 例: OUTで渡されたバイト列をまとめてホストJS側へ転送する。
+- 2ポート短縮版では `PORT0 OUT` が `CMD`、`PORT1 OUT` がコマンド引数。
+
+### IN（JS → MSX）処理
+- `bus.connectInputDevice(port, handler)` でハンドラを登録する。ハンドラは `port` を受け、**即時にバイト値を返す必要**がある。
+- 非同期データはキューに貯め、空の場合は `0xff` などの「未準備」を返す。
+- `STATUS`（`PORT0 IN`）でキュー状態（`RX_READY`）、非同期進行（`BUSY`）、エラー（`ERROR`）を伝える。
+
+### サンプル: Short Protocol v1-2P向け attachBridge()
 
 ```js
 function attachBridge() {
   const bus = WMSX.room.machine.bus;
-  const PORT_DATA = 0x48;   // 使用前に空きポートであることを要確認
-  const outbox = [];
+  const PORT_CTRL = 0x48;
+  const PORT_DATA = 0x49;
+  const RX_CAPACITY = 1024;
 
-  function drainOutbox() {
-    if (!outbox.length) return;
-    const packet = new Uint8Array(outbox.splice(0, outbox.length));
-    // ここでfetchやWebSocket送信などを実施
+  // ポート占有チェック
+  if (bus.devicesInputPorts[PORT_CTRL] || bus.devicesOutputPorts[PORT_CTRL]) {
+    throw new Error("PORT 0x48 is already in use");
+  }
+  if (bus.devicesInputPorts[PORT_DATA] || bus.devicesOutputPorts[PORT_DATA]) {
+    throw new Error("PORT 0x49 is already in use");
   }
 
-  bus.connectOutputDevice(PORT_DATA, (value) => {
-    outbox.push(value & 0xff);
-    if (outbox.length === 1) queueMicrotask(drainOutbox);
+  // STATUSビット
+  const STATUS = {
+    RX_READY: 1 << 0,
+    TX_READY: 1 << 1,
+    EV_READY: 1 << 2,
+    BUSY: 1 << 3,
+    ERROR: 1 << 4,
+    ALIVE: 1 << 7
+  };
+
+  // CMD
+  const CMD = { MP3_PLAY: 0x20, MP3_STOP: 0x21, MP3_VOL: 0x22, REQ_TEXT: 0x30, RESET: 0x3f };
+  const ARG_LEN = { [CMD.MP3_PLAY]: 1, [CMD.MP3_STOP]: 0, [CMD.MP3_VOL]: 1, [CMD.REQ_TEXT]: 1, [CMD.RESET]: 0 };
+
+  // パケット(TYPE/LEN/PAYLOAD) JS→MSX
+  const PKT = { RSP_TEXT: 0x81, RSP_ERROR: 0xe0 };
+
+  // RXリングバッファ（Array.shift禁止）
+  const rxBuf = new Uint8Array(RX_CAPACITY);
+  let rxHead = 0, rxTail = 0, rxCount = 0;
+  const rxPush = (byte) => {
+    if (rxCount === RX_CAPACITY) { rxTail = (rxTail + 1) % RX_CAPACITY; rxCount--; } // 古いものから捨てる
+    rxBuf[rxHead] = byte & 0xff;
+    rxHead = (rxHead + 1) % RX_CAPACITY;
+    rxCount++;
+  };
+  const rxPop = () => {
+    if (!rxCount) return 0xff;
+    const value = rxBuf[rxTail];
+    rxTail = (rxTail + 1) % RX_CAPACITY;
+    rxCount--;
+    return value;
+  };
+  const pushPacket = (type, payloadBytes) => {
+    rxPush(type);
+    rxPush(payloadBytes.length & 0xff);
+    payloadBytes.forEach(rxPush);
+  };
+
+  let busy = false;
+  let error = false;
+  let lastCmd = 0x00;
+  let expectedLen = 0;
+  let rxTmp = [];
+  const resetState = () => {
+    busy = false;
+    error = false;
+    lastCmd = 0;
+    expectedLen = 0;
+    rxTmp = [];
+    rxHead = rxTail = rxCount = 0;
+  };
+
+  const handleReqText = (reqId) => {
+    busy = true;
+    queueMicrotask(async () => {
+      try {
+        // 実際のfetchや生成処理をここに記述（OUTハンドラ外で実行）
+        const text = `Hello from JS (req ${reqId})`;
+        const bytes = Array.from(new TextEncoder().encode(text)).slice(0, 255);
+        pushPacket(PKT.RSP_TEXT, [reqId, ...bytes]);
+      } catch (e) {
+        error = true;
+        pushPacket(PKT.RSP_ERROR, [reqId]);
+      } finally {
+        busy = false;
+      }
+    });
+  };
+
+  const dispatch = (cmd, args) => {
+    switch (cmd) {
+      case CMD.MP3_PLAY:
+        // オーディオ制御をここに実装
+        break;
+      case CMD.MP3_STOP:
+        break;
+      case CMD.MP3_VOL:
+        break;
+      case CMD.REQ_TEXT:
+        handleReqText(args[0] ?? 0);
+        return;
+      case CMD.RESET:
+        resetState();
+        return;
+      default:
+        error = true;
+        pushPacket(PKT.RSP_ERROR, [0xff]);
+        return;
+    }
+  };
+
+  bus.connectOutputDevice(PORT_CTRL, (value) => {
+    lastCmd = value & 0xff;
+    expectedLen = ARG_LEN[lastCmd] ?? 0;
+    rxTmp = [];
+    if (expectedLen === 0) queueMicrotask(() => dispatch(lastCmd, []));
   });
+
+  bus.connectOutputDevice(PORT_DATA, (value) => {
+    if (expectedLen === 0) { error = true; return; }
+    rxTmp.push(value & 0xff);
+    if (rxTmp.length === expectedLen) {
+      queueMicrotask(() => dispatch(lastCmd, rxTmp));
+      expectedLen = 0;
+    }
+  });
+
+  bus.connectInputDevice(PORT_CTRL, () => {
+    let status = STATUS.ALIVE | STATUS.TX_READY;
+    if (rxCount) status |= STATUS.RX_READY | STATUS.EV_READY;
+    if (busy) status |= STATUS.BUSY;
+    if (error) status |= STATUS.ERROR;
+    return status;
+  });
+
+  bus.connectInputDevice(PORT_DATA, () => rxPop());
 }
 ```
 
-### IN（JS → MSX）処理
-- `bus.connectInputDevice(port, handler)` でハンドラを登録する。ハンドラは `port` を受け、**即時にバイト値を返す必要**がある。
-- 非同期データを渡す場合はあらかじめキューを用意し、無い場合は `0xff` 等の「未準備」を表す値を返す。
-- OUTとINを分けた「データポート」と「ステータスポート」を設けるとプロトコル設計が単純になる。
-
-```js
-function attachInbound(bus) {
-  const PORT_STATUS = 0x49; // 使用前に空きポートであることを確認
-  const PORT_DATA = 0x4a;
-  const inbox = [];
-
-  // 外部イベントでinboxにpushする
-  function feedBytes(bytes) { inbox.push(...bytes); }
-
-  bus.connectInputDevice(PORT_STATUS, () => (inbox.length ? 1 : 0)); // 1=読めるデータあり
-  bus.connectInputDevice(PORT_DATA, () => (inbox.length ? inbox.shift() : 0xff));
-}
-```
+ポイント:
+- 2ポートのみ（`0x48`=CMD/STATUS、`0x49`=ARG/DATA）。
+- 重い処理（例: `fetch`）はOUTハンドラ外で実行（`queueMicrotask` など）。
+- RXはリングバッファで保持し、`Array.shift` を使わない。
+- `RESET` で受信途中・キュー・フラグを全消去。
 
 ### ポート設計のコツ
-- 既存デバイスが使用するポートを避ける（VDP: 0x98–0x9b、PSG: 0xa0–0xa1、PPI: 0xa8–0xab など）。
-- 2〜4ポートを連番で確保し、「データ」「ステータス」「コマンド/長さ」といった役割を分離する。
-- 大量転送が必要な場合は「長さ付きパケット」「先頭バイトをコマンド」といったシンプルな自前プロトコルを組む。
+- 既存デバイスが使用するポートを避ける（VDP: `0x98–0x9b`, PSG: `0xa0–0xa1`, PPI: `0xa8–0xab` など）。
+- 将来的に大容量転送が必要なら、専用CMDの後で `PORT1` に長さ付きデータを流す方式を上乗せする。
 
 ### クリーンアップ
 - ブリッジを外すときは `bus.disconnectInputDevice` / `bus.disconnectOutputDevice` を呼び出してポートを解放する。
 - NetPlayなどでRoomが再構成される場合は、再度 `attachBridge` を呼び出して新しい `bus` に繋ぎ直す。
+
+### 旧4ポートShort Protocol（Deprecated）
+- `PORT_CMD/ARG/STATUS/DATA` で分割していた旧4ポート版は参照用途として残してもよいが、2ポート版を推奨・優先すること。
