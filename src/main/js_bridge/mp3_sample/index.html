@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebMSX JS Bridge MP3 Sample</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230a0a0a'/><text x='50' y='62' font-size='64' text-anchor='middle' fill='%23ffffff'>MSX</text></svg>" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0f0f0f;
+        color: #eaeaea;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 16px;
+        display: grid;
+        grid-template-columns: minmax(320px, 2fr) 1fr;
+        gap: 16px;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      .panel {
+        background: #161616;
+        border: 1px solid #2a2a2a;
+        border-radius: 10px;
+        padding: 14px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      button {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        border: none;
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 14px;
+      }
+      #status {
+        font-variant-numeric: tabular-nums;
+        color: #8be9fd;
+        font-weight: 600;
+      }
+      #log {
+        background: #0f0f0f;
+        border: 1px solid #2b2b2b;
+        border-radius: 8px;
+        padding: 8px;
+        height: 180px;
+        overflow-y: auto;
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+      #wmsx-wrapper {
+        border: 1px solid #2a2a2a;
+        border-radius: 10px;
+        background: #0b0b0b;
+        padding: 10px;
+      }
+      #wmsx-screen {
+        width: 100%;
+        min-height: 320px;
+      }
+      pre {
+        background: #0f0f0f;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #2a2a2a;
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 6px 8px;
+        border-bottom: 1px solid #2a2a2a;
+      }
+      @media (max-width: 960px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    <script defer src="../../../../release/stable/6.0/embedded/wmsx.js"></script>
+    <script type="module" defer src="./mp3-bridge.js"></script>
+  </head>
+  <body>
+    <main>
+      <section class="panel" style="grid-column: 1 / -1">
+        <h1>WebMSX JS Bridge MP3 Sample</h1>
+        <p>
+          MSX から I/O ポート経由で BGM / SE の再生指示を受け取り、ホスト側で MP3 を再生するサンプルです。MP3 はこの
+          フォルダに <code>bgm1.mp3</code> 〜 <code>bgm3.mp3</code>、<code>se1.mp3</code> 〜 <code>se3.mp3</code> を置いてください。
+        </p>
+        <div class="controls">
+          <button id="start-btn">プリロードして WebMSX を開始</button>
+          <label><input type="checkbox" id="preload-toggle" checked /> オーディオを事前読み込みしてから MSX を起動</label>
+          <span id="status">待機中</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div id="wmsx-wrapper">
+          <div id="wmsx-screen"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>ブリッジ仕様</h2>
+        <p>MSX 側は以下のポートを使って操作します。</p>
+        <ul>
+          <li><strong>データポート</strong>: 0x5B（コマンド用パラメータを書き込む）</li>
+          <li><strong>コマンドポート</strong>: 0x5A（コマンドを書き込む / ステータス読み出し）</li>
+        </ul>
+        <p>基本の書き込みシーケンスは「先にデータを OUT し、その後コマンドを OUT」するだけです。</p>
+        <pre><code>10 REM BGM1 をループ再生
+20 OUT &amp;H5B,0 : OUT &amp;H5A,&amp;H03
+
+30 REM BGM2 をフェードイン再生
+40 OUT &amp;H5B,1 : OUT &amp;H5A,&amp;H02
+
+50 REM 現在の BGM をフェードアウト（デフォルト 1200ms）
+60 OUT &amp;H5B,0 : OUT &amp;H5A,&amp;H04
+
+70 REM BGM3 にクロスフェード
+80 OUT &amp;H5B,2 : OUT &amp;H5A,&amp;H05
+
+90 REM SE1 を再生（ワンショット）
+100 OUT &amp;H5B,0 : OUT &amp;H5A,&amp;H11
+
+110 REM フェード時間を 0.5 秒に設定（100ms ステップ）
+120 OUT &amp;H5B,5 : OUT &amp;H5A,&amp;H06
+
+130 REM クロスフェード時間を 2 秒に設定
+140 OUT &amp;H5B,20 : OUT &amp;H5A,&amp;H07
+</code></pre>
+        <p>コマンド一覧（データポートにセットしてから発行）:</p>
+        <table>
+          <thead>
+            <tr><th>コマンド</th><th>値</th><th>説明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>BGM 再生</td><td>0x01</td><td>データ=トラック ID (0-2)。すぐ再生。</td></tr>
+            <tr><td>BGM フェードイン再生</td><td>0x02</td><td>データ=ID。フェード時間は設定値。</td></tr>
+            <tr><td>BGM ループ再生</td><td>0x03</td><td>データ=ID。ループで再生。</td></tr>
+            <tr><td>BGM フェードアウト</td><td>0x04</td><td>データ=0 なら設定値。0以外なら 100ms ステップの時間。</td></tr>
+            <tr><td>BGM クロスフェード</td><td>0x05</td><td>データ=ID。クロスフェード時間は設定値。</td></tr>
+            <tr><td>フェード時間設定</td><td>0x06</td><td>データ=100ms ステップ。</td></tr>
+            <tr><td>クロスフェード時間設定</td><td>0x07</td><td>データ=100ms ステップ。</td></tr>
+            <tr><td>SE 再生</td><td>0x11</td><td>データ=SE ID (0-2)。ワンショット。</td></tr>
+          </tbody>
+        </table>
+        <p>ステータス読み出し（IN 0x5A）:</p>
+        <ul>
+          <li>bit0: BGM 再生中</li>
+          <li>bit1-bit2: 現在の BGM ID (0-3)</li>
+          <li>bit3: オーディオ事前読み込み完了</li>
+          <li>bit4: フェード処理中</li>
+        </ul>
+      </section>
+
+      <section class="panel" style="grid-column: 1 / -1">
+        <h2>ログ</h2>
+        <div id="log" aria-live="polite"></div>
+      </section>
+    </main>
+  </body>
+</html>
