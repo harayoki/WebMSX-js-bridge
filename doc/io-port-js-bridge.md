@@ -105,3 +105,70 @@ This enables modern input methods while keeping the MSX-side logic simple and de
 
 The I/O Port JS Bridge treats JavaScript as an external peripheral rather than an integrated runtime.  
 By respecting MSX-era I/O semantics, it enables modern capabilities while preserving portability, simplicity, and the possibility of future real-hardware implementations.
+
+---
+
+## Implementation Guidelines for Handling OUT/IN from External JavaScript
+
+### When to Hook
+- After `WMSX.start()` is called, you can access `WMSX.room.machine.bus`.
+- Before reserving ports, inspect `bus.devicesInputPorts` / `bus.devicesOutputPorts` and ensure no existing devices are present.
+
+### OUT (MSX → JS)
+- Register handlers with `bus.connectOutputDevice(port, handler)`. Handlers receive `(value, port)`.
+- **Do not run heavy work synchronously** inside the handler. Buffer data and process it later via `setTimeout` / `queueMicrotask` to keep emulator frames responsive.
+- Example: buffer bytes from OUT and forward them to host JS when convenient.
+
+```js
+function attachBridge() {
+  const bus = WMSX.room.machine.bus;
+  const PORT_DATA = 0x48;   // Verify the port is free before use
+  const outbox = [];
+
+  function drainOutbox() {
+    if (!outbox.length) return;
+    const packet = new Uint8Array(outbox.splice(0, outbox.length));
+    // Forward packet via fetch, WebSocket, etc.
+  }
+
+  bus.connectOutputDevice(PORT_DATA, (value) => {
+    outbox.push(value & 0xff);
+    if (outbox.length === 1) queueMicrotask(drainOutbox);
+  });
+}
+```
+
+### IN (JS → MSX)
+- Register handlers with `bus.connectInputDevice(port, handler)`. Handlers receive `port` and **must immediately return** a byte.
+- If delivering async data, keep a queue ready; when empty, return `0xff` (or another sentinel for “not ready”).
+- Splitting “data ports” and “status ports” simplifies the protocol.
+
+```js
+function attachInbound(bus) {
+  const PORT_STATUS = 0x49; // Verify the port is free before use
+  const PORT_DATA = 0x4a;
+  const inbox = [];
+
+  // Feed bytes into inbox from external events
+  function feedBytes(bytes) { inbox.push(...bytes); }
+
+  bus.connectInputDevice(PORT_STATUS, () => (inbox.length ? 1 : 0)); // 1 = data available
+  bus.connectInputDevice(PORT_DATA, () => (inbox.length ? inbox.shift() : 0xff));
+}
+```
+
+### Port Design Tips
+- Avoid ports used by existing devices (e.g., VDP: 0x98–0x9b, PSG: 0xa0–0xa1, PPI: 0xa8–0xab).
+- Reserve 2–4 consecutive ports and split roles across them (“data,” “status,” “command/length,” etc.).
+- For bulk transfers, consider simple protocols such as length-prefixed packets or leading-byte commands.
+
+### Cleanup
+- When detaching the bridge, call `bus.disconnectInputDevice` / `bus.disconnectOutputDevice` to free ports.
+- If Room is rebuilt (e.g., NetPlay reconnection), re-run your `attachBridge` to bind to the fresh `bus`.
+
+### Sample: BASIC + JS Visualization
+- A runnable example lives in `src/js_bridge/sample1/`:
+  - `io-port-bridge.bas`: SCREEN 0 BASIC that watches IN ports for JS-sent bytes, shows status on screen, and sends OUT values when keys **1–4** (port `0x50`) or **5–8** (port `0x51`) are pressed.
+  - `bridge.js`: JavaScript that displays MSX OUT traffic, queues bytes for MSX IN via on-page buttons, and renders a DIV below the emulator.
+
+Use this sample as a reference for end-to-end I/O bridging between MSX BASIC and host JavaScript.
