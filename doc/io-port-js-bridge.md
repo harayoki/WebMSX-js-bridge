@@ -6,6 +6,8 @@ This document describes a mechanism to connect JavaScript code and MSX-side code
 
 By routing communication through MSX-style I/O port access, programs running inside WebMSX can interact with the outside world via JavaScript. This approach intentionally avoids embedding web-specific logic directly into the emulator core or MSX programs.
 
+For a concrete, low-latency command/event channel, see the [Short Protocol v1 bridge](short-protocol-v1.md) and the accompanying implementation in `src/js_bridge/short_protocol/`.
+
 This mechanism works **only inside the WebMSX emulator** by default.  
 However, if a real MSX cartridge were designed to intercept and handle the same I/O port accesses, similar concepts could be realized on actual MSX hardware, depending on external hardware capabilities.
 
