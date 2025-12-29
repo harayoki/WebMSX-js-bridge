@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebMSX JS Bridge Samples</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+        background: #0b0f16;
+        color: #e8edf2;
+      }
+      header {
+        background: radial-gradient(circle at 20% 20%, rgba(69, 91, 208, 0.35), transparent 45%),
+          radial-gradient(circle at 80% 0%, rgba(35, 191, 255, 0.25), transparent 35%),
+          #0b0f16;
+        padding: 32px 16px 26px;
+        border-bottom: 1px solid #1f2a40;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+      }
+      header h1 {
+        margin: 0 0 10px;
+        font-size: 28px;
+      }
+      header p {
+        margin: 0;
+        line-height: 1.6;
+        max-width: 960px;
+      }
+      main {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 18px 16px 32px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 14px;
+      }
+      .card {
+        background: #111726;
+        border: 1px solid #1f2a40;
+        border-radius: 12px;
+        padding: 14px 16px 16px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .card h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .card p {
+        margin: 0;
+        line-height: 1.6;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: auto;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        color: #e8edf2;
+        font-weight: 600;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        box-shadow: 0 8px 16px rgba(37, 99, 235, 0.3);
+        border: 1px solid #2f4aad;
+      }
+      a.button.secondary {
+        background: #283044;
+        box-shadow: none;
+        border: 1px solid #3a4260;
+      }
+      a.button:hover {
+        filter: brightness(1.05);
+      }
+      footer {
+        color: #9fb3d1;
+        margin-top: 18px;
+        line-height: 1.5;
+      }
+      code {
+        background: #0b0f16;
+        border: 1px solid #1f2a40;
+        padding: 2px 5px;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>WebMSX JS Bridge Samples</h1>
+      <p>
+        WebMSX と JavaScript を I/O ポート経由でつなぐためのサンプル集です。以下のページから、目的に合う
+        ブリッジ実装をすぐ試せます。
+      </p>
+    </header>
+
+    <main>
+      <section class="grid">
+        <article class="card">
+          <h2>IO Port JS Bridge Sample 1</h2>
+          <p>
+            BASIC と JavaScript をポート <code>0x50</code>〜<code>0x53</code> で連携させる最小構成の例です。キーボー
+            ド入力で OUT を送り、ページ内のボタン操作で IN を返す動作を確認できます。
+          </p>
+          <div class="actions">
+            <a class="button" href="./sample1/index.html">デモを開く</a>
+            <a class="button secondary" href="./sample1/README.md">README</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>MP3 Bridge Sample</h2>
+          <p>
+            MSX 側のコマンドでホストブラウザーの MP3 再生を制御するサンプルです。<code>0x5A</code> と
+            <code>0x5B</code> の I/O ポートを使って BGM や SE の再生、フェード、クロスフェードを行います。
+          </p>
+          <div class="actions">
+            <a class="button" href="../main/js_bridge/mp3_sample/index.html">デモを開く</a>
+            <a class="button secondary" href="../main/js_bridge/mp3_sample/mp3-bridge.js">スクリプトを見る</a>
+          </div>
+        </article>
+      </section>
+
+      <footer>
+        リポジトリーのルートでサーバーを起動し、<code>http://localhost:8000/src/js_bridge/index.html</code>
+        を開くとこの一覧を表示できます。
+      </footer>
+    </main>
+  </body>
+</html>

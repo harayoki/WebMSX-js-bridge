@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>IO Port JS Bridge Sample 1</title>
+    <meta
+      name="description"
+      content="WebMSX IO port bridge sample harness for trying the JavaScript sample and BASIC listing together."
+    />
+    <style>
+      body {
+        font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+        margin: 0;
+        background: #0b0f16;
+        color: #e8edf2;
+      }
+      main.page {
+        max-width: 960px;
+        margin: 24px auto 0;
+        padding: 0 16px 24px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 26px;
+      }
+      p {
+        line-height: 1.6;
+      }
+      .card {
+        background: #111726;
+        border: 1px solid #1f2a40;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin: 12px 0;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      }
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+      ol {
+        margin: 0 0 0 20px;
+        padding: 0;
+        line-height: 1.6;
+      }
+      ol li {
+        margin: 4px 0;
+      }
+      pre {
+        background: #0b0f16;
+        border: 1px solid #1f2a40;
+        border-radius: 8px;
+        padding: 12px;
+        overflow-x: auto;
+        white-space: pre;
+        line-height: 1.6;
+        margin: 8px 0 0;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button,
+      a.download-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 12px;
+        background: #283044;
+        color: #e8edf2;
+        border: 1px solid #3a4260;
+        border-radius: 8px;
+        text-decoration: none;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:hover,
+      a.download-link:hover {
+        background: #343e5c;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #wmsx-wrapper {
+        text-align: center;
+        margin: 18px auto 0;
+      }
+      #wmsx-screen {
+        box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.7);
+      }
+    </style>
+    <script>
+      // Minimal configuration before WebMSX loads. Adjust as needed while testing.
+      window.WMSX = {
+        PRESETS: "NODISK",
+      };
+    </script>
+  </head>
+  <body>
+    <main class="page">
+      <h1>IO Port JS Bridge Sample 1</h1>
+      <p>
+        WebMSX 本体と <code>bridge.js</code> をまとめて読み込むデモページです。ローカルでページを開くだけで
+        サンプル JavaScript が動作するので、エミュレーターの I/O ポート連携をすぐ確認できます。
+      </p>
+
+      <section class="card">
+        <h2>使い方</h2>
+        <ol>
+          <li>リポジトリーのルートで簡易サーバーを起動します（例: <code>python -m http.server</code>）。</li>
+          <li>ブラウザーで <code>http://localhost:8000/src/js_bridge/sample1/index.html</code> を開きます。</li>
+          <li>エミュレーターの下に表示されるパネルで OUT/IN の状態を確認できます（自動で接続されます）。</li>
+          <li>下の BASIC リストを WebMSX にペーストして <code>RUN</code> すると、キー入力と JS 側の連携を試せます。</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>BASIC プログラム</h2>
+        <p>
+          以下は <code>io-port-bridge.bas</code> の内容です。コピーしてそのまま BASIC に貼り付けるか、ファイルとして読み込んでください。
+        </p>
+        <div class="actions">
+          <button id="copy-bas" type="button" disabled>テキストをコピー</button>
+          <a class="download-link" href="./io-port-bridge.bas" download>io-port-bridge.bas を保存</a>
+          <span id="copy-status" aria-live="polite"></span>
+        </div>
+        <pre id="bas-preview">BASIC プログラムを読み込み中...</pre>
+      </section>
+    </main>
+
+    <div id="wmsx-wrapper">
+      <div id="wmsx">
+        <div id="wmsx-screen"></div>
+      </div>
+    </div>
+
+    <script>
+      (async function loadBasPreview() {
+        const preview = document.getElementById("bas-preview");
+        const copyBtn = document.getElementById("copy-bas");
+        const status = document.getElementById("copy-status");
+        try {
+          const res = await fetch("./io-port-bridge.bas");
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          preview.textContent = text.trimEnd();
+          copyBtn.disabled = false;
+          copyBtn.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(text);
+              status.textContent = "コピーしました";
+            } catch (err) {
+              status.textContent = "クリップボードにコピーできませんでした";
+              console.warn("Clipboard error", err);
+            }
+          });
+        } catch (err) {
+          preview.textContent = "BASIC ファイルを読み込めませんでした。\n" + err;
+          status.textContent = "手動でファイルを確認してください";
+          console.warn("BAS preview error", err);
+        }
+      })();
+    </script>
+
+    <script src="../../../release/stable/6.0/embedded/wmsx.js"></script>
+    <script src="./bridge.js"></script>
+  </body>
+</html>
