@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebMSX JS Bridge サンプル選択</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        margin: 0;
+        padding: 1.5rem;
+        background: radial-gradient(circle at 20% 20%, #eef6ff, #f7f9fc 50%, #dde7ff 90%);
+        color: #1f2937;
+      }
+      h1 {
+        margin-top: 0;
+        font-size: 1.5rem;
+      }
+      form {
+        display: grid;
+        gap: 1rem;
+        max-width: 480px;
+      }
+      label {
+        font-weight: 600;
+      }
+      select, button {
+        font-size: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 0.75rem;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+      }
+      button {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      button:hover {
+        filter: brightness(1.05);
+      }
+      .note {
+        font-size: 0.95rem;
+        line-height: 1.6;
+        color: #334155;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>HuggingFace 上で使う WebMSX JS Bridge サンプル</h1>
+    <p class="note">
+      下のドロップダウンから実行したい HTML サンプルを選んでください。<br />
+      「開く」ボタンは新しいタブ（別ページ）でプレイヤーを表示します。スマホでは新しいタブをフルスクリーン化して利用します。
+    </p>
+    <form action="/play" method="get" target="_blank">
+      <div>
+        <label for="sample_id">サンプル</label><br />
+        <select id="sample_id" name="sample_id" required>
+          {% for key, sample in samples.items() %}
+          <option value="{{ key }}">{{ sample.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">別ページで開く</button>
+    </form>
+  </body>
+</html>

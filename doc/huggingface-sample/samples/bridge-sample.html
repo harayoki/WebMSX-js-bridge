@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bridge Sample</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #0d1117;
+        color: #e5e7eb;
+        font-family: system-ui, sans-serif;
+      }
+      main {
+        display: grid;
+        place-items: center;
+        height: 100%;
+        gap: 1rem;
+        text-align: center;
+      }
+      button {
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.75rem;
+        border: 1px solid #334155;
+        background: linear-gradient(135deg, #0ea5e9, #2563eb);
+        color: white;
+        font-size: 1.1rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .log {
+        min-height: 3rem;
+        padding: 0.75rem 1rem;
+        width: min(90vw, 460px);
+        background: #111827;
+        border-radius: 0.9rem;
+        border: 1px solid #1f2937;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>WebMSX JS Bridge サンプル</h1>
+        <p>この HTML はブラウザ内で I/O ポートに書き込む例を示します。</p>
+      </div>
+      <button id="poke">I/O ポート 0x10 に 0x77 を書き込む</button>
+      <div class="log" id="log">未実行</div>
+    </main>
+    <script>
+      const logArea = document.getElementById("log");
+      const button = document.getElementById("poke");
+
+      // WebMSX 側で WMSX.room や橋渡し API を公開している前提。
+      button.addEventListener("click", () => {
+        try {
+          if (window.WMSX && WMSX.room && WMSX.room.bus) {
+            WMSX.room.bus.writePort(0x10, 0x77);
+            logArea.textContent = "0x10 に 0x77 を送信しました";
+          } else {
+            logArea.textContent = "WebMSX バス API が見つかりません";
+          }
+        } catch (err) {
+          console.error(err);
+          logArea.textContent = `送信に失敗: ${err}`;
+        }
+      });
+    </script>
+  </body>
+</html>
